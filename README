@@ -1,1 +1,178 @@
-Hi, this is the description file for SDTM_DM.
+Hi, this is the code for SDTM_DM.
+
+
+/*=================================================================================
+       PROJECT: BAN-AA-01                           
+     DIRECTORY: C:\bancova\projects\prostate\data\sdtm (&dir)                                        
+
+   DESCRIPTION: Import data from an excel file with demographic info;
+                Create DM dataset(s) according to DM specification and 
+                report to excel
+  
+    INPUT DATA: &dir\data\dm_c_1.xls
+   OUTPUT DATA: &dir\dm_peter.sas7bdat
+                &dir\DM_peter.xls
+
+    PROGRAMMER: Peter Luo
+          DATE: 11/19/2012
+==================================================================================*/
+
+dm 'output;clear;log;clear';
+
+options nocenter mprint formdlim='-' msglevel= i noxwait noxsync;
+
+%let dir= C:\bancova\projects\prostate\data\sdtm;
+
+libname peter "&dir\";
+
+*import data;
+proc import out= dm 
+    datafile= "&dir\data\dm_c_1.xls"
+    dbms= xls replace;
+    getnames= yes;
+  mixed= yes;
+run;
+
+data dm1;
+
+	*set up the length and type;
+    length study      $ 40.
+           DOMAIN     $ 8.
+           u_subject  $ 40.
+           SUBJID     $ 40.
+           RFSTDTC    $ 64.
+           RFENDTC    $ 64.
+           SITEID     $ 40.
+           AGE          8.
+           AGEU       $ 10.
+           SEX        $ 2.
+           RACE       $ 40.
+           ethnic     $ 40.
+           ARMCD      $ 20.
+           ARM        $ 40.
+           COUNTRY    $ 3.;
+
+    retain study;
+    set dm (drop= obs enrollment investigator birth);
+
+	format _all_;
+	informat _all_;
+
+	*add two new variables;
+    DOMAIN= 'DM';
+    AGEU= 'YEARS';
+
+    SUBJID= trim(left(put(subject, 8.)));
+
+	*set up a 4-digit format for SITEID;
+    SITEID= trim(left(put(site, z4.)));
+
+	*due to the limitation of sas 9.1, date format has to be reset 
+	without using e8601n;
+    RFSTDTC1= put(start_date, 8.);
+    RFENDTC1= put(end_date, 8.);
+
+    y1= substr(RFSTDTC1,1,4);
+    y2= substr(RFENDTC1,1,4);
+    m1= substr(RFSTDTC1,5,2);
+    m2= substr(RFENDTC1,5,2);
+    d1= substr(RFSTDTC1,7,2);
+    d2= substr(RFENDTC1,7,2);
+
+    RFSTDTC= trim(left(trim(y1)||'-'||trim(m1)||'-'||trim(d1)));
+    RFENDTC= trim(left(trim(y2)||'-'||trim(m2)||'-'||trim(d2)));
+
+	*allign variables left or center;
+    SEX= trim(left(put(gender, $2. -c)));
+    RACE= trim(left(put(race_group, $40. -c)));
+    ETHNIC= trim(left(put(ethnic, $40. -c)));
+    COUNTRY= put(location, $3. -c);
+    AGE= put(age_year,8. -l);
+
+	*specify two variable ARMCD and ARM;
+    if treatment= 1 then ARMCD= 'A';
+        else ARMCD= 'P';
+
+    if treatment= 1 then ARM= 'Drug A';
+        else ARM= 'Placebo';
+
+    ARMCD= trim(left(put(ARMCD,$20. -c)));
+    ARM= trim(left(put(ARM,$40. -c)));
+
+	*switch the specified variables to capital;
+    if COUNTRY= 'Aus' then COUNTRY= 'AUS';
+    if COUNTRY= 'Can' then COUNTRY= 'CAN';
+    if COUNTRY= 'Eur' then COUNTRY= 'FRA';
+
+    if ETHNIC= 'Not Hispanic or Latino' then ETHNIC= 'NOT HISPANIC OR LATINO';
+    if ETHNIC= 'Hispanic or Latino' then ETHNIC= 'HISPANIC OR LATINO';
+	if ETHNIC= 'Other' then ETHNIC= 'UNKNOWN';
+
+    if RACE= 'White' then RACE= 'WHITE';
+    if RACE= 'Black' then RACE= 'BLACK OR AFRICAN AMERICAN';
+    if RACE= 'Asian' then RACE= 'ASIAN';
+    if RACE= 'American Indian or Alaska Native' then RACE= 'AMERICAN INDIAN OR ALASKA NATIVE';
+    if RACE= 'Native Hawaiian or other Pacific Islande' then RACE= 'NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER';
+    if RACE= 'Other' then RACE= 'AMERICAN INDIAN OR ALASKA NATIVE';
+
+    rename study      = STUDYID
+           u_subject  = USUBJID;
+
+
+    drop treatment subject start_date end_date site y1 y2 m1 m2 d1 d2 RFSTDTC1 RFENDTC1 location gender race_group age_year;
+
+run;
+
+data dm2;
+
+	*reorder the variables;
+    retain STUDYID DOMAIN USUBJID SUBJID RFSTDTC RFENDTC SITEID AGE 
+           AGEU SEX RACE ETHNIC ARMCD ARM COUNTRY;
+
+    set dm1;
+
+
+
+	*label the variables;
+    label STUDYID  = Study Identifier
+          DOMAIN   = Domain Abbreviation
+          USUBJID  = Unique Subject Identifier
+          SUBJID   = Subject Identifier for the Study
+          RFSTDTC  = Subject Reference Start Date
+          RFENDTC  = Subject Reference End Date
+          SITEID   = Study Site Identifier
+          AGE      = Age
+          AGEU     = Age Units
+          SEX      = Sex
+          RACE     = Race
+          ETHNIC   = Ethnicity
+          ARMCD    = Planned Arm Code
+          ARM      = Description of Planned Arm
+          COUNTRY  = Country;
+
+run;
+
+proc sort data= dm2;
+    by USUBJID;
+run;
+
+data peter.dm_peter;
+    set dm2;
+run;
+
+proc print data= dm2 ;
+run;
+
+proc contents data= dm2;
+run;
+
+*export the data to excel;
+ods html file= "&dir.\DM_peter.xls";
+proc print data= peter.dm_peter;
+    title "<td align=center colspan=4><fontsize=8><b>DM</b></font></td>";
+run;
+
+ods html close;
+
+
+***END***
